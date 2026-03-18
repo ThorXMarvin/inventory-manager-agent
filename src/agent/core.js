@@ -1,72 +1,84 @@
 /**
- * Core Agent Orchestrator
- * Receives a message, parses intent via LLM, routes to the right module,
- * and returns a formatted response.
+ * Core Agent Orchestrator — v2 with Function Calling
+ * 
+ * Replaces the v1 parser-based approach with proper LLM function calling.
+ * Supports OpenAI, Anthropic, and Google (Gemini) providers.
+ * 
+ * Flow:
+ * 1. Receive user message
+ * 2. Send to LLM with system prompt + tool definitions
+ * 3. If LLM returns tool_calls, execute each via executor
+ * 4. Send tool results back to LLM
+ * 5. Repeat until LLM returns final text response
  */
 
-import { parseMessage } from './parser.js';
-import { addStock, getStock, getAllStock, getLowStock } from './stock.js';
-import { recordSale, getDailySales, getCustomerHistory } from './sales.js';
-import { dailySummary, weeklyReport, stockReport, profitReport } from './reports.js';
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import { toOpenAITools, toAnthropicTools } from './tools.js';
+import { executeToolCalls } from './executor.js';
+import { buildSystemPrompt } from './prompts.js';
 import { getConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
+let llmClient = null;
+
 /**
- * Format a number with thousands separators.
+ * Initialize the LLM client based on config.
  */
-function fmt(n) {
-  return Number(n || 0).toLocaleString();
+function initClient() {
+  const { llm } = getConfig();
+
+  switch (llm.provider) {
+    case 'openai':
+      llmClient = { type: 'openai', client: new OpenAI({ apiKey: llm.apiKey }) };
+      break;
+
+    case 'anthropic':
+      llmClient = { type: 'anthropic', client: new Anthropic({ apiKey: llm.apiKey }) };
+      break;
+
+    case 'ollama':
+      llmClient = {
+        type: 'openai',
+        client: new OpenAI({ apiKey: 'ollama', baseURL: `${llm.ollamaBaseUrl}/v1` }),
+      };
+      break;
+
+    case 'google':
+      llmClient = {
+        type: 'openai',
+        client: new OpenAI({
+          apiKey: llm.apiKey,
+          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        }),
+      };
+      break;
+
+    default:
+      logger.warn(`Unknown LLM provider: ${llm.provider}. Falling back to openai.`);
+      llmClient = { type: 'openai', client: new OpenAI({ apiKey: llm.apiKey }) };
+  }
+
+  logger.info(`LLM initialized: ${llm.provider} / ${llm.model} (function calling mode)`);
 }
 
 /**
- * Process a user message and return a response.
- * This is the main entry point for all channels.
+ * Process a user message using the function calling loop.
  * @param {string} message - Raw user message
- * @param {object} meta - Optional metadata (sender, channel, etc.)
- * @returns {string} Response text
+ * @param {Object} meta - Optional metadata (sender, channel, etc.)
+ * @returns {Promise<string>} Response text
  */
 export async function processMessage(message, meta = {}) {
-  const config = getConfig();
-  const currency = config.business.currency || 'UGX';
+  if (!llmClient) initClient();
+
+  const { llm } = getConfig();
+  const systemPrompt = buildSystemPrompt();
 
   try {
-    // Parse the message via LLM
-    const intent = await parseMessage(message);
-    logger.info(`Intent: ${intent.action} | Message: "${message}"`);
-
-    switch (intent.action) {
-      case 'add_stock':
-        return handleAddStock(intent, currency);
-
-      case 'record_sale':
-        return handleRecordSale(intent, currency);
-
-      case 'check_stock':
-        return handleCheckStock(intent, currency);
-
-      case 'stock_report':
-        return stockReport();
-
-      case 'daily_summary':
-        return dailySummary();
-
-      case 'weekly_report':
-        return weeklyReport();
-
-      case 'profit_report':
-        return profitReport();
-
-      case 'help':
-        return getHelpText(config.business.name);
-
-      default:
-        return `🤔 I didn't quite understand that. Try:\n` +
-          `• "Sold 5 bags cement to Kato"\n` +
-          `• "Received 100 bags cement"\n` +
-          `• "How much cement do I have?"\n` +
-          `• "Stock report"\n` +
-          `• "Daily summary"\n` +
-          `• "Help"`;
+    if (llmClient.type === 'anthropic') {
+      return await processAnthropic(message, systemPrompt, llm.model);
+    } else {
+      return await processOpenAI(message, systemPrompt, llm.model);
     }
   } catch (err) {
     logger.error(`Error processing message: ${err.message}`, err);
@@ -75,117 +87,115 @@ export async function processMessage(message, meta = {}) {
 }
 
 /**
- * Handle adding stock.
+ * OpenAI-compatible function calling loop (works for OpenAI, Ollama, Google Gemini).
  */
-function handleAddStock(intent, currency) {
-  if (!intent.items || intent.items.length === 0) {
-    return '❓ What items did you receive? E.g., "Received 50 bags cement"';
-  }
+async function processOpenAI(message, systemPrompt, model) {
+  const tools = toOpenAITools();
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: message },
+  ];
 
-  const results = addStock(intent.items);
-  let response = '✅ *Stock Updated:*\n';
+  const MAX_ITERATIONS = 10;
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const response = await llmClient.client.chat.completions.create({
+      model,
+      messages,
+      tools,
+      tool_choice: 'auto',
+      max_tokens: 2048,
+      temperature: 0.3,
+    });
 
-  for (const item of results) {
-    if (item.error) {
-      response += `  ❌ ${item.name}: ${item.error}\n`;
-    } else {
-      response += `  • ${item.name}: +${item.added} ${item.unit}(s) → ${item.newStock} total\n`;
+    const choice = response.choices[0];
+    const assistantMessage = choice.message;
+
+    // If no tool calls, we have the final response
+    if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
+      return assistantMessage.content || 'I processed your request.';
+    }
+
+    // Add assistant message (with tool calls) to history
+    messages.push(assistantMessage);
+
+    // Parse and execute tool calls
+    const toolCalls = assistantMessage.tool_calls.map(tc => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments || '{}'),
+    }));
+
+    logger.info(`Tool calls: ${toolCalls.map(tc => tc.name).join(', ')}`);
+    const results = await executeToolCalls(toolCalls);
+
+    // Add tool results to message history
+    for (const result of results) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: result.tool_call_id,
+        content: JSON.stringify(result.result),
+      });
     }
   }
 
-  return response;
+  return '⚠️ Reached maximum processing steps. Please try a simpler request.';
 }
 
 /**
- * Handle recording a sale.
+ * Anthropic function calling loop.
  */
-function handleRecordSale(intent, currency) {
-  if (!intent.items || intent.items.length === 0) {
-    return '❓ What did you sell? E.g., "Sold 5 bags cement to Kato"';
-  }
+async function processAnthropic(message, systemPrompt, model) {
+  const tools = toAnthropicTools();
+  const messages = [{ role: 'user', content: message }];
 
-  const sale = recordSale(intent.items, intent.customer);
-  let response = '💰 *Sale Recorded:*\n';
+  const MAX_ITERATIONS = 10;
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const response = await llmClient.client.messages.create({
+      model,
+      max_tokens: 2048,
+      system: systemPrompt,
+      tools,
+      messages,
+    });
 
-  for (const item of sale.items) {
-    if (item.error) {
-      response += `  ❌ ${item.name}: ${item.error}\n`;
-    } else {
-      response += `  • ${item.quantity}x ${item.name}: ${currency} ${fmt(item.totalPrice)}\n`;
+    // Check if there are tool use blocks
+    const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+    const textBlocks = response.content.filter(b => b.type === 'text');
+
+    // If no tool calls and we have text, return the text
+    if (toolUseBlocks.length === 0) {
+      return textBlocks.map(b => b.text).join('\n') || 'I processed your request.';
     }
-  }
 
-  if (sale.grandTotal > 0) {
-    response += `\n💵 *Total: ${currency} ${fmt(sale.grandTotal)}*`;
-  }
-
-  if (sale.customer) {
-    response += `\n👤 Customer: ${sale.customer}`;
-  }
-
-  // Show remaining stock for sold items
-  const stockItems = sale.items.filter(i => !i.error);
-  if (stockItems.length > 0) {
-    response += '\n\n📦 Stock remaining:';
-    for (const item of stockItems) {
-      response += `\n  • ${item.name}: ${item.remaining} ${item.unit}(s)`;
+    // If stop_reason is 'end_turn' and we have text + no more tool calls needed
+    if (response.stop_reason === 'end_turn' && textBlocks.length > 0 && toolUseBlocks.length === 0) {
+      return textBlocks.map(b => b.text).join('\n');
     }
+
+    // Add assistant response to messages
+    messages.push({ role: 'assistant', content: response.content });
+
+    // Execute tool calls
+    const toolCalls = toolUseBlocks.map(block => ({
+      id: block.id,
+      name: block.name,
+      arguments: block.input || {},
+    }));
+
+    logger.info(`Tool calls: ${toolCalls.map(tc => tc.name).join(', ')}`);
+    const results = await executeToolCalls(toolCalls);
+
+    // Add tool results
+    const toolResults = results.map(r => ({
+      type: 'tool_result',
+      tool_use_id: r.tool_call_id,
+      content: JSON.stringify(r.result),
+    }));
+
+    messages.push({ role: 'user', content: toolResults });
   }
 
-  return response;
-}
-
-/**
- * Handle checking stock levels.
- */
-function handleCheckStock(intent, currency) {
-  // If specific items requested
-  if (intent.items && intent.items.length > 0) {
-    let response = '';
-    for (const item of intent.items) {
-      const stock = getStock(item.name);
-      if (stock.error) {
-        response += `❌ ${stock.error}\n`;
-        continue;
-      }
-
-      const statusIcon = stock.isLow ? '🔴' : '🟢';
-      const statusText = stock.isLow ? '⚠️ LOW' : '✅ OK';
-
-      response += `📦 *${stock.name}*\n`;
-      response += `  ${statusIcon} In stock: ${stock.currentStock} ${stock.unit}(s) ${statusText}\n`;
-      response += `  Min level: ${stock.minStock} ${stock.unit}(s)\n`;
-      response += `  This week: -${stock.weekOut} sold, +${stock.weekIn} received\n`;
-      response += `  Value: ${currency} ${fmt(stock.stockValue)} (at cost)\n\n`;
-    }
-    return response.trim();
-  }
-
-  // Otherwise show all stock
-  return stockReport();
-}
-
-/**
- * Get help text.
- */
-function getHelpText(businessName) {
-  return `🤖 *${businessName || 'Inventory Manager'} — Help*\n\n` +
-    `I understand natural language! Here's what I can do:\n\n` +
-    `📥 *Add Stock:*\n` +
-    `  "Received 50 bags cement"\n` +
-    `  "Added 100 iron sheets and 20 tins paint"\n\n` +
-    `💰 *Record Sales:*\n` +
-    `  "Sold 5 bags cement to Kato"\n` +
-    `  "Sale: 10 iron sheets, 2 tins paint"\n\n` +
-    `📦 *Check Stock:*\n` +
-    `  "How much cement do I have?"\n` +
-    `  "Check iron sheets stock"\n\n` +
-    `📊 *Reports:*\n` +
-    `  "Stock report"\n` +
-    `  "Daily summary"\n` +
-    `  "Weekly report"\n` +
-    `  "Profit report"\n\n` +
-    `Just type naturally — I'll figure out what you need! 💪`;
+  return '⚠️ Reached maximum processing steps. Please try a simpler request.';
 }
 
 export default { processMessage };

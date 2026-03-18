@@ -81,7 +81,28 @@ Set `WEB_ENABLED=true` in `.env`. Access at `http://localhost:3000`.
 
 ## Data Storage
 
-All data is stored in a local SQLite database at `./data/inventory.db` (configurable via `DB_PATH`). No external database required.
+The agent supports three storage modes:
+
+### SQLite (Default)
+All data stored locally in `./data/inventory.db`. Fast, reliable, works offline.
+
+### Google Sheets
+Store everything in a Google Spreadsheet — great for team visibility and mobile access. See [Google Sheets Setup Guide](./google-sheets-setup.md) for configuration.
+
+### Hybrid ("both")
+SQLite handles all reads/writes (speed + reliability), Google Sheets receives background syncs every 15 minutes (dashboard + backup).
+
+Configure in `config/business.yaml`:
+```yaml
+storage:
+  mode: "sqlite"           # sqlite | sheets | both
+  sqlite:
+    path: "./data/inventory.db"
+  sheets:
+    credentials_file: "./config/google-credentials.json"
+    spreadsheet_id: ""
+    spreadsheet_name: "{business_name} - Inventory"
+```
 
 ## Troubleshooting
 

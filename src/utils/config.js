@@ -102,6 +102,17 @@ export function getConfig() {
     db: {
       path: env('DB_PATH', './data/inventory.db'),
     },
+    storage: {
+      mode: biz.storage?.mode || 'sqlite',
+      sqlite: {
+        path: biz.storage?.sqlite?.path || env('DB_PATH', './data/inventory.db'),
+      },
+      sheets: {
+        credentials_file: biz.storage?.sheets?.credentials_file || env('GOOGLE_SHEETS_CREDENTIALS_FILE', './config/google-credentials.json'),
+        spreadsheet_id: biz.storage?.sheets?.spreadsheet_id || env('GOOGLE_SHEETS_SPREADSHEET_ID', ''),
+        spreadsheet_name: biz.storage?.sheets?.spreadsheet_name || '{business_name} - Inventory',
+      },
+    },
     logLevel: env('LOG_LEVEL', 'info'),
     business: biz.business || {},
     categories: biz.categories || [],

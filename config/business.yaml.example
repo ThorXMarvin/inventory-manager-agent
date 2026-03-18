@@ -8,6 +8,17 @@ business:
   phone: "+256700000000"
   location: "Kampala, Uganda"
 
+# ─── Storage Configuration ──────────────────────────────
+# Supports: sqlite (local), sheets (Google Sheets), or both (hybrid)
+storage:
+  mode: "sqlite"           # sqlite | sheets | both
+  sqlite:
+    path: "./data/inventory.db"
+  sheets:
+    credentials_file: "./config/google-credentials.json"
+    spreadsheet_id: ""     # leave empty for auto-create on first run
+    spreadsheet_name: "{business_name} - Inventory"
+
 # ─── Product Categories ─────────────────────────────────
 categories:
   - name: "Building Materials"

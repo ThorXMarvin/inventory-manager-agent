@@ -7,3 +7,7 @@ config/products.csv
 *.db
 *.db-journal
 *.db-wal
+config/google-credentials.json
+data/
+config/google-credentials.json
+auth_info_baileys/
