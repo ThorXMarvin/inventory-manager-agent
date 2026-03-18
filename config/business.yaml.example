@@ -1,0 +1,91 @@
+# ─── Business Configuration ──────────────────────────────
+# Copy this file to config/business.yaml and customize
+
+business:
+  name: "Mukasa Hardware Store"
+  type: "retail"           # retail | pharmacy | restaurant | warehouse
+  currency: "UGX"          # UGX | KES | TZS | USD
+  phone: "+256700000000"
+  location: "Kampala, Uganda"
+
+# ─── Product Categories ─────────────────────────────────
+categories:
+  - name: "Building Materials"
+    products:
+      - name: "Cement (50kg bag)"
+        sku: "CEM-50"
+        unit: "bag"
+        buy_price: 32000
+        sell_price: 38000
+        min_stock: 20
+        current_stock: 85
+      - name: "Iron Sheets (30 gauge)"
+        sku: "IRS-30"
+        unit: "piece"
+        buy_price: 25000
+        sell_price: 32000
+        min_stock: 50
+        current_stock: 120
+      - name: "Nails (4 inch)"
+        sku: "NAL-4"
+        unit: "kg"
+        buy_price: 5000
+        sell_price: 7000
+        min_stock: 15
+        current_stock: 40
+
+  - name: "Paint"
+    products:
+      - name: "Plascon Emulsion (20L)"
+        sku: "PNT-E20"
+        unit: "tin"
+        buy_price: 180000
+        sell_price: 220000
+        min_stock: 10
+        current_stock: 25
+      - name: "Sadolin Varnish (5L)"
+        sku: "PNT-V5"
+        unit: "tin"
+        buy_price: 85000
+        sell_price: 110000
+        min_stock: 5
+        current_stock: 12
+
+  - name: "Plumbing"
+    products:
+      - name: "PVC Pipe (1/2 inch, 6m)"
+        sku: "PVC-H6"
+        unit: "piece"
+        buy_price: 8000
+        sell_price: 12000
+        min_stock: 20
+        current_stock: 45
+
+# ─── Alert Settings ──────────────────────────────────────
+alerts:
+  low_stock:
+    enabled: true
+    check_interval: "6h"
+    notify_via:
+      - "whatsapp"
+      - "telegram"
+  daily_summary:
+    enabled: true
+    time: "20:00"          # 24h format, end of business day
+
+# ─── Report Settings ────────────────────────────────────
+reports:
+  weekly: true
+  monthly: true
+  include:
+    - "stock_levels"
+    - "sales_summary"
+    - "profit_margin"
+    - "top_sellers"
+
+# ─── Authorized Users (optional) ────────────────────────
+# Only these numbers/usernames can interact with the bot
+# Leave empty to allow anyone
+authorized_users: []
+  # - "+256700000001"
+  # - "@shop_manager"

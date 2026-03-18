@@ -1,0 +1,9 @@
+name,sku,category,unit,buy_price,sell_price,min_stock,current_stock
+"Cement (50kg bag)",CEM-50,Building Materials,bag,32000,38000,20,85
+"Iron Sheets (30 gauge)",IRS-30,Building Materials,piece,25000,32000,50,120
+"Nails (4 inch)",NAL-4,Building Materials,kg,5000,7000,15,40
+"Plascon Emulsion (20L)",PNT-E20,Paint,tin,180000,220000,10,25
+"Sadolin Varnish (5L)",PNT-V5,Paint,tin,85000,110000,5,12
+"PVC Pipe (1/2 inch, 6m)",PVC-H6,Plumbing,piece,8000,12000,20,45
+"Sand (1 ton)",SND-1T,Building Materials,ton,120000,150000,5,10
+"Wheelbarrow",WHL-01,Tools,piece,85000,120000,3,8
