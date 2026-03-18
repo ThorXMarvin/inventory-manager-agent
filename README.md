@@ -1,23 +1,67 @@
-# Inventory Manager Agent
+# 📦 Inventory Manager Agent
 
-A WhatsApp/Telegram-based AI agent that helps small businesses track stock, record sales, get low-stock alerts, and generate inventory reports — all through simple chat messages. No app to install, no complex software to learn.
+AI-powered inventory management for small businesses. Track stock, record sales, get alerts — all through WhatsApp, Email, or a web dashboard. No complex software to learn.
 
-## Problem
+---
 
-Most small shops, pharmacies, and market vendors in East Africa track inventory mentally or in notebooks. Stock-outs mean lost sales. Overstocking ties up cash. Existing inventory software is too complex, too expensive, or requires smartphones/computers they don't have. But everyone has WhatsApp.
+## 🚀 Quick Start (Non-Technical)
 
-## Solution
+### 1. Download
+Download the latest release from [**Releases**](../../releases).
 
-A chat-based inventory agent that:
-- Tracks stock levels via simple WhatsApp messages ("Added 50 bags of cement")
-- Records sales ("Sold 3 bags cement to John")
-- Sends low-stock alerts automatically via WhatsApp and email
-- Generates daily/weekly stock and sales reports
-- Handles multiple product categories
-- Works with basic phones (text-based, no app needed)
-- **v2:** Google Sheets integration, LLM function calling, email notifications
+### 2. Install Node.js
+If you don't have Node.js installed, download it from [nodejs.org](https://nodejs.org) (LTS version recommended).
 
-## Architecture
+### 3. Start the App
+- **Windows:** Double-click `start.bat`
+- **Mac/Linux:** Open a terminal in the folder and run `./start.sh`
+
+### 4. Setup Wizard
+Your browser will open automatically. Follow the setup wizard to:
+- Enter your business details
+- Add your products (or use a template for your business type)
+- Connect an AI provider (OpenAI, Anthropic, Google, or free local Ollama)
+- Enable WhatsApp and email alerts
+
+### 5. Start Managing!
+That's it. Chat with your inventory agent via the web dashboard or WhatsApp.
+
+---
+
+## 💬 What Can It Do?
+
+Talk to it naturally — just like chatting with a shop assistant:
+
+| You say... | It does... |
+|---|---|
+| "Added 50 bags cement" | Updates stock levels |
+| "Sold 3 bags cement to Kato" | Records sale + updates stock |
+| "How much cement do I have?" | Shows current stock |
+| "Daily summary" | Revenue, profit, top sellers |
+| "What's running low?" | Lists items below minimum stock |
+
+## 📱 Channels
+
+- **Web Dashboard** — Chat interface + stock table + sales stats
+- **WhatsApp** — Manage inventory from your phone (scan QR to connect)
+- **Email** — Automated daily reports and low-stock alerts
+
+## 🎯 Perfect For
+
+- 🔨 Hardware shops
+- 💊 Pharmacies
+- 🍽️ Restaurants
+- 🛒 Grocery stores / dukas
+- 👕 Clothing shops
+- 📱 Electronics shops
+- Any small business with physical inventory
+
+---
+
+<details>
+<summary><h2>🛠️ Developer Documentation</h2></summary>
+
+### Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -40,7 +84,7 @@ A chat-based inventory agent that:
 └──────────────────────────────────────────────────────────┘
 ```
 
-## Tech Stack
+### Tech Stack
 
 - **Runtime:** Node.js (ES Modules)
 - **LLM:** OpenAI, Anthropic, Google Gemini, or Ollama (with function calling)
@@ -48,32 +92,7 @@ A chat-based inventory agent that:
 - **Storage:** SQLite (local) and/or Google Sheets (cloud)
 - **Other:** node-cron, winston, googleapis
 
-## Channels
-
-### 📱 WhatsApp (Primary)
-The business owner scans a QR code with their personal WhatsApp number. That number becomes the agent — customers message it and AI responds. The owner can still use WhatsApp normally on their phone.
-
-- **QR code** shown in terminal AND on the web dashboard
-- **Session persistence** — auth state saved to disk, auto-reconnects
-- **Message filtering** — respond to all numbers, or only configured authorized users
-- Set `WHATSAPP_ENABLED=true` in `.env` and scan the QR on first run
-
-### 📧 Email (Brevo SMTP)
-Outbound-only notifications: daily summaries, low stock alerts, weekly reports. Not conversational. Uses Brevo's free SMTP relay (300 emails/day, no credit card).
-
-See [docs/email-setup.md](docs/email-setup.md) for setup.
-
-### 🌐 Web Dashboard
-REST API + HTML dashboard with:
-- Chat interface (talk to the agent)
-- WhatsApp QR code display (for easy scanning)
-- Stock levels table with low-stock indicators
-- Sales stats
-
-### 📱 Telegram
-Planned for a future release. Placeholder file exists.
-
-## Quick Start
+### Dev Setup
 
 ```bash
 git clone https://github.com/AiStudioUg/inventory-manager-agent.git
@@ -86,52 +105,15 @@ cp config/business.yaml.example config/business.yaml
 npm start
 ```
 
-The web dashboard will be available at `http://localhost:3000`.
+### Storage Options
 
-See [docs/setup.md](docs/setup.md) for detailed setup instructions.
+**SQLite (Default):** Fast, local, works offline. All data in `./data/inventory.db`.
 
-## Storage Options
+**Google Sheets:** Store everything in a Google Spreadsheet. Great for team visibility. See [docs/google-sheets-setup.md](docs/google-sheets-setup.md).
 
-### SQLite (Default)
-Fast, local, works offline. All data in `./data/inventory.db`.
+**Hybrid ("both"):** SQLite handles reads/writes (fast), Google Sheets receives background syncs every 15 minutes.
 
-### Google Sheets
-Store everything in a Google Spreadsheet with 5 auto-created tabs:
-- **Products** — Master product catalog
-- **Transactions** — Every stock movement
-- **Customers** — Customer directory
-- **Daily Summaries** — End-of-day reports
-- **Alerts Log** — Low stock and other alerts
-
-Great for team visibility — share the spreadsheet with employees for read-only access. See [Google Sheets Setup Guide](docs/google-sheets-setup.md).
-
-### Hybrid ("both")
-Best of both worlds:
-- **SQLite** handles all reads/writes (fast, reliable, offline-capable)
-- **Google Sheets** receives background syncs every 15 minutes (dashboard + backup)
-- If Sheets is unavailable, the agent keeps working via SQLite
-
-Configure in `config/business.yaml`:
-```yaml
-storage:
-  mode: "both"           # sqlite | sheets | both
-  sqlite:
-    path: "./data/inventory.db"
-  sheets:
-    credentials_file: "./config/google-credentials.json"
-    spreadsheet_id: ""   # auto-creates on first run
-    spreadsheet_name: "{business_name} - Inventory"
-```
-
-## Agent Brain — Function Calling
-
-The v2 agent uses proper LLM function calling instead of parsing JSON from text. This means:
-- More reliable intent detection
-- Support for complex multi-step operations
-- The LLM can chain multiple tools in one request
-- Better error handling and fallbacks
-
-### 13 Available Tools
+### 13 Available Tools (Function Calling)
 
 | Category | Tools |
 |----------|-------|
@@ -141,124 +123,44 @@ The v2 agent uses proper LLM function calling instead of parsing JSON from text.
 | **Customers** | `get_customer_history` |
 | **Reports** | `daily_summary`, `weekly_report` |
 
-## Conversation Examples
-
-### Adding Stock
-```
-User: Received 100 bags cement and 50 iron sheets
-Agent: ✅ Stock updated:
-       • Cement (50kg): +100 bags → 185 total
-       • Iron Sheets (30g): +50 pcs → 170 total
-```
-
-### Recording Sales
-```
-User: Sold 5 bags cement and 10 iron sheets to Kato Builders
-Agent: 💰 Sale recorded:
-       • 5x Cement (50kg): UGX 190,000
-       • 10x Iron Sheets (30g): UGX 320,000
-       • Total: UGX 510,000
-       • Customer: Kato Builders
-```
-
-### Checking Stock
-```
-User: How much cement do I have?
-Agent: 📦 Cement (50kg bag)
-       • In stock: 180 bags ✅
-       • Min level: 20 bags
-       • Value: UGX 5,760,000 (at cost)
-```
-
-### Daily Summary
-```
-User: Daily summary
-Agent: 📊 Daily Summary — March 18, 2026
-       💰 Sales: 23 transactions
-       💵 Revenue: UGX 2,450,000
-       📈 Profit: UGX 680,000
-       🏆 Top: Cement (45 bags), Iron Sheets (30 pcs)
-       ⚠️ 2 items low on stock
-```
-
-## File Structure
+### File Structure
 
 ```
 inventory-manager-agent/
 ├── README.md
+├── start.sh / start.bat          # User-friendly start scripts
 ├── .env.example
 ├── package.json
 ├── config/
 │   ├── business.yaml.example
 │   └── products.csv.example
+├── scripts/
+│   └── package.sh                # Release packaging
 ├── src/
-│   ├── index.js                 # Main entry point
-│   ├── agent/
-│   │   ├── core.js              # Function calling loop (v2)
-│   │   ├── tools.js             # 13 tool definitions
-│   │   ├── executor.js          # Tool execution engine
-│   │   ├── prompts.js           # System prompt builder
-│   │   ├── parser.js            # Legacy NLU parser (v1)
-│   │   ├── stock.js             # Stock management
-│   │   ├── sales.js             # Sales tracking
-│   │   └── reports.js           # Report generation
-│   ├── storage/
-│   │   ├── adapter.js           # Storage factory (sqlite/sheets/both)
-│   │   ├── interface.js         # Interface documentation
-│   │   ├── sync.js              # SQLite → Sheets background sync
-│   │   ├── sqlite/
-│   │   │   ├── index.js         # SQLite adapter
-│   │   │   ├── client.js        # SQLite connection
-│   │   │   ├── products.js
-│   │   │   ├── transactions.js
-│   │   │   ├── customers.js
-│   │   │   ├── reports.js
-│   │   │   └── alerts.js
-│   │   └── sheets/
-│   │       ├── index.js         # Google Sheets adapter
-│   │       ├── client.js        # API auth + rate limiting
-│   │       ├── setup.js         # Auto-create spreadsheet
-│   │       ├── cache.js         # TTL cache for API calls
-│   │       ├── products.js
-│   │       ├── transactions.js
-│   │       ├── customers.js
-│   │       ├── reports.js
-│   │       └── alerts.js
-│   ├── alerts/
-│   │   ├── engine.js
-│   │   └── notifier.js
-│   ├── channels/
-│   │   ├── whatsapp.js          # Primary: Baileys + QR scan
-│   │   ├── email.js             # Brevo SMTP outbound notifications
-│   │   ├── telegram.js          # Placeholder (future)
-│   │   └── web.js               # Dashboard + WhatsApp QR display
-│   ├── db/
-│   │   └── sqlite.js            # Legacy DB (backward compat)
-│   └── utils/
-│       ├── config.js
-│       ├── csv-import.js
-│       └── logger.js
-├── docs/
-│   ├── setup.md
-│   ├── google-sheets-setup.md   # Sheets setup guide
-│   ├── email-setup.md           # Brevo SMTP setup guide
-│   ├── adding-products.md
-│   ├── stock-commands.md
-│   ├── reports.md
-│   └── csv-import.md
-└── data/                        # Created at runtime
-    └── inventory.db
+│   ├── index.js
+│   ├── agent/                    # AI brain (function calling)
+│   ├── storage/                  # SQLite + Google Sheets
+│   ├── alerts/                   # Low stock alerts
+│   ├── channels/                 # WhatsApp, Email, Web
+│   ├── db/                       # Legacy SQLite
+│   └── utils/                    # Config, CSV import, logging
+├── docs/                         # Setup guides
+└── data/                         # Created at runtime
 ```
 
-## Target Users
+### Building Releases
 
-- Hardware shops
-- Pharmacies and drug shops
-- Market vendors
-- Small grocery stores (dukas)
-- Restaurants (ingredient tracking)
-- Any small business with physical inventory
+```bash
+chmod +x scripts/package.sh
+./scripts/package.sh
+# Creates dist/inventory-manager-agent-v1.0.0-linux.tar.gz
+# Creates dist/inventory-manager-agent-v1.0.0-windows.zip
+```
 
-## License
+</details>
 
-MIT — AI Studio Uganda
+---
+
+## 📄 License
+
+MIT — [AI Studio Uganda](https://github.com/AiStudioUg)
