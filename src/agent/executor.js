@@ -7,14 +7,55 @@
 import { getStorage } from '../storage/adapter.js';
 import { logger } from '../utils/logger.js';
 
+// Tools that staff members can access (owner can access everything)
+const STAFF_ALLOWED_TOOLS = new Set([
+  'add_stock', 'check_stock', 'record_sale', 'search_product',
+  'get_sales_today', 'get_low_stock', 'add_product', 'get_customer_history',
+  'get_sales_range',
+]);
+
+// Tools restricted to owners only
+const OWNER_ONLY_TOOLS = new Set([
+  'update_product', 'adjust_stock', 'weekly_report', 'daily_summary',
+  'get_staff_activity',
+]);
+
+/**
+ * Check if a staff member has permission to use a tool.
+ * @param {string} toolName
+ * @param {Object} meta - Contains meta.staff with role info
+ * @returns {{ allowed: boolean, message?: string }}
+ */
+function checkPermission(toolName, meta = {}) {
+  const staff = meta?.staff;
+  if (!staff || staff.role === 'owner') return { allowed: true };
+
+  if (OWNER_ONLY_TOOLS.has(toolName)) {
+    return {
+      allowed: false,
+      message: `🔒 Sorry ${staff.name}, you don't have permission to use this feature. Only the owner can access ${toolName.replace(/_/g, ' ')}.`,
+    };
+  }
+
+  return { allowed: true };
+}
+
 /**
  * Execute a single tool call.
  * @param {string} toolName - Name of the tool to execute
  * @param {Object} args - Tool arguments from the LLM
+ * @param {Object} meta - Metadata including staff info
  * @returns {Promise<Object>} Result to send back to the LLM
  */
-export async function executeTool(toolName, args = {}) {
+export async function executeTool(toolName, args = {}, meta = {}) {
+  // Check permission first
+  const perm = checkPermission(toolName, meta);
+  if (!perm.allowed) {
+    return { success: false, error: perm.message };
+  }
+
   const storage = getStorage();
+  const loggedBy = meta?.staff?.name || 'System';
 
   logger.info(`Executing tool: ${toolName} with args: ${JSON.stringify(args)}`);
 
@@ -22,7 +63,7 @@ export async function executeTool(toolName, args = {}) {
     switch (toolName) {
       // ─── Stock ────────────────────────────────
       case 'add_stock': {
-        const result = await storage.addStock(args.product, args.quantity, args.buy_price || 0);
+        const result = await storage.addStock(args.product, args.quantity, args.buy_price || 0, loggedBy);
         return { success: true, ...result };
       }
 
@@ -80,7 +121,7 @@ export async function executeTool(toolName, args = {}) {
       // ─── Sales ────────────────────────────────
       case 'record_sale': {
         const result = await storage.recordSale(
-          args.product, args.quantity, args.customer || null, args.sell_price || 0
+          args.product, args.quantity, args.customer || null, args.sell_price || 0, loggedBy
         );
         return { success: true, ...result };
       }
@@ -145,6 +186,12 @@ export async function executeTool(toolName, args = {}) {
         return { success: true, ...result };
       }
 
+      // ─── Staff Activity ─────────────────────────
+      case 'get_staff_activity': {
+        const result = await storage.getStaffActivity(args.staff_name, args.date || null);
+        return { success: true, ...result };
+      }
+
       default:
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
@@ -157,12 +204,13 @@ export async function executeTool(toolName, args = {}) {
 /**
  * Execute multiple tool calls in sequence.
  * @param {Array<{name: string, arguments: Object}>} toolCalls
+ * @param {Object} meta - Metadata including staff info
  * @returns {Promise<Array<{tool_call_id: string, name: string, result: Object}>>}
  */
-export async function executeToolCalls(toolCalls) {
+export async function executeToolCalls(toolCalls, meta = {}) {
   const results = [];
   for (const call of toolCalls) {
-    const result = await executeTool(call.name, call.arguments || {});
+    const result = await executeTool(call.name, call.arguments || {}, meta);
     results.push({
       tool_call_id: call.id || call.name,
       name: call.name,

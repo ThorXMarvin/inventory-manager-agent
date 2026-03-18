@@ -1,27 +1,111 @@
 /**
- * WhatsApp Channel (Baileys)
- * Connects to WhatsApp via QR code, listens for messages,
- * passes them to the core agent, and replies.
+ * WhatsApp Channel (Baileys) — Primary Channel
+ * 
+ * The business owner scans a QR code with their own WhatsApp number.
+ * Their number becomes the agent's number — customers message it, AI responds.
+ * Owner can still use WhatsApp normally on their phone.
+ * 
+ * Features:
+ * - QR code in terminal AND on web dashboard (via shared state)
+ * - Session persistence (auth state saved to disk, auto-reconnect)
+ * - Configurable message filtering (respond to all, or only configured numbers)
+ * - Owner JID auto-detected for alert delivery
  */
 
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
-  makeInMemoryStore,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import path from 'path';
 import fs from 'fs';
 import { processMessage } from '../agent/core.js';
 import { registerChannel } from '../alerts/notifier.js';
+import { getConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
 let sock = null;
+let ownerJid = null;       // Auto-detected: the connected account's JID
+let currentQR = null;       // Latest QR string for web dashboard display
+let connectionStatus = 'disconnected'; // disconnected | qr_pending | connected
+
 const AUTH_DIR = path.resolve('data/whatsapp-auth');
-const adminJid = null; // Set to owner's JID for alert delivery
+
+// ─── Exported State (for web dashboard) ─────────────────
+
+/** Get the current QR code string (null if already connected). */
+export function getWhatsAppQR() { return currentQR; }
+
+/** Get current connection status. */
+export function getWhatsAppStatus() { return connectionStatus; }
+
+/** Get the connected owner JID. */
+export function getOwnerJid() { return ownerJid; }
+
+// ─── Staff Authorization ────────────────────────────────
 
 /**
- * Start the WhatsApp connection.
+ * Get staff info for a sender based on authorized_numbers config.
+ * @param {string} senderJid - WhatsApp JID (e.g., "256700000001@s.whatsapp.net")
+ * @returns {{ name: string, phone: string, role: string } | null}
+ */
+export function getStaffInfo(senderJid) {
+  const config = getConfig();
+  const authorizedNumbers = config.channels?.whatsapp?.authorized_numbers || [];
+
+  if (authorizedNumbers.length === 0) return null;
+
+  const phone = senderJid.split('@')[0];
+
+  for (const entry of authorizedNumbers) {
+    const cleaned = (entry.phone || '').replace(/[^0-9]/g, '');
+    if (phone === cleaned || phone.endsWith(cleaned) || cleaned.endsWith(phone)) {
+      return {
+        name: entry.name || 'Unknown',
+        phone: entry.phone || '',
+        role: entry.role || 'staff',
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Check if a sender is allowed to interact with the bot.
+ * Uses role-based authorized_numbers if configured, falls back to flat list.
+ */
+function isSenderAllowed(senderJid) {
+  const config = getConfig();
+
+  // New role-based config
+  const authorizedNumbers = config.channels?.whatsapp?.authorized_numbers || [];
+  if (authorizedNumbers.length > 0) {
+    const allowUnknown = config.channels?.whatsapp?.allow_unknown ?? false;
+    const staffInfo = getStaffInfo(senderJid);
+    if (staffInfo) return true;
+    return allowUnknown;
+  }
+
+  // Legacy flat list fallback
+  const allowList = config.authorizedUsers || [];
+
+  // Empty list = allow everyone
+  if (allowList.length === 0) return true;
+
+  const phone = senderJid.split('@')[0];
+
+  return allowList.some(allowed => {
+    const cleaned = allowed.replace(/[^0-9]/g, '');
+    return phone === cleaned || phone.endsWith(cleaned) || cleaned.endsWith(phone);
+  });
+}
+
+// ─── Main Connection ────────────────────────────────────
+
+/**
+ * Start the WhatsApp connection with Baileys.
+ * Shows QR in terminal, saves auth state, auto-reconnects.
  */
 export async function startWhatsApp() {
   // Ensure auth directory exists
@@ -34,84 +118,136 @@ export async function startWhatsApp() {
   sock = makeWASocket.default({
     auth: state,
     printQRInTerminal: true,
+    // Suppress noisy Baileys logs — only show warnings and errors
     logger: {
       level: 'silent',
-      trace: () => {},
-      debug: () => {},
-      info: () => {},
+      trace: () => {}, debug: () => {}, info: () => {},
       warn: (...args) => logger.warn('Baileys:', ...args),
       error: (...args) => logger.error('Baileys:', ...args),
       fatal: (...args) => logger.error('Baileys FATAL:', ...args),
-      child: () => ({ trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {} }),
+      child: () => ({
+        trace: () => {}, debug: () => {}, info: () => {},
+        warn: () => {}, error: () => {}, fatal: () => {},
+      }),
     },
   });
 
-  // Save credentials on update
+  // Save credentials whenever they update
   sock.ev.on('creds.update', saveCreds);
 
-  // Handle connection events
+  // ─── Connection Events ──────────────────────────────
+
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
+    // QR code available — share it for terminal and web dashboard
     if (qr) {
-      logger.info('WhatsApp: Scan QR code to connect');
+      currentQR = qr;
+      connectionStatus = 'qr_pending';
+      logger.info('📱 WhatsApp: Scan the QR code with your phone to connect');
+      logger.info('   Open WhatsApp → Settings → Linked Devices → Link a Device');
+      logger.info('   QR also available on the web dashboard at /api/whatsapp/qr');
     }
 
+    // Connection closed — decide whether to reconnect
     if (connection === 'close') {
+      currentQR = null;
+      connectionStatus = 'disconnected';
+
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-      logger.warn(`WhatsApp connection closed. Status: ${statusCode}. Reconnecting: ${shouldReconnect}`);
+      logger.warn(`WhatsApp disconnected. Code: ${statusCode}. Reconnect: ${shouldReconnect}`);
 
       if (shouldReconnect) {
-        setTimeout(() => startWhatsApp(), 5000);
+        // Exponential backoff: wait 3-15 seconds
+        const delay = Math.min(3000 + Math.random() * 5000, 15000);
+        setTimeout(() => startWhatsApp(), delay);
       } else {
-        logger.error('WhatsApp logged out. Delete data/whatsapp-auth and restart to re-authenticate.');
+        logger.error('WhatsApp logged out. Delete data/whatsapp-auth/ and restart to re-scan QR.');
       }
     }
 
+    // Connected successfully
     if (connection === 'open') {
-      logger.info('✅ WhatsApp connected successfully');
+      currentQR = null;
+      connectionStatus = 'connected';
 
-      // Register for alert notifications
+      // Auto-detect owner JID (the account that scanned the QR)
+      ownerJid = sock.user?.id;
+      if (ownerJid) {
+        // Normalize: "256700000001:42@s.whatsapp.net" → "256700000001@s.whatsapp.net"
+        ownerJid = ownerJid.replace(/:.*@/, '@');
+        logger.info(`✅ WhatsApp connected as ${ownerJid}`);
+      } else {
+        logger.info('✅ WhatsApp connected');
+      }
+
+      // Register for alert delivery → sends alerts to the owner's own chat
       registerChannel('whatsapp', async (message) => {
-        if (adminJid) {
-          await sock.sendMessage(adminJid, { text: message });
+        if (ownerJid && sock) {
+          try {
+            await sock.sendMessage(ownerJid, { text: message });
+          } catch (err) {
+            logger.error(`Failed to send WhatsApp alert: ${err.message}`);
+          }
         }
       });
     }
   });
 
-  // Handle incoming messages
+  // ─── Message Handling ─────────────────────────────────
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
-      // Skip our own messages and status broadcasts
+      // Skip our own outgoing messages
       if (msg.key.fromMe) continue;
+      // Skip status broadcasts
       if (msg.key.remoteJid === 'status@broadcast') continue;
+      // Skip group messages (optional: could enable later)
+      if (msg.key.remoteJid?.endsWith('@g.us')) continue;
 
-      const text = msg.message?.conversation ||
+      // Extract text from various message types
+      const text =
+        msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        msg.message?.videoMessage?.caption ||
         '';
 
       if (!text.trim()) continue;
 
       const sender = msg.key.remoteJid;
-      logger.info(`WhatsApp message from ${sender}: ${text}`);
+      const senderName = msg.pushName || 'Unknown';
+
+      // Check authorization
+      if (!isSenderAllowed(sender)) {
+        logger.info(`WhatsApp: Blocked message from unauthorized sender ${sender}`);
+        continue;
+      }
+
+      logger.info(`WhatsApp [${senderName}] (${sender}): ${text}`);
 
       try {
+        // Get staff info for role-based access
+        const staffInfo = getStaffInfo(sender);
+
+        // Process the message through the agent
         const response = await processMessage(text, {
           channel: 'whatsapp',
           sender,
-          name: msg.pushName || 'Unknown',
+          name: senderName,
+          staff: staffInfo || { name: senderName, phone: sender, role: 'owner' },
         });
 
+        // Send reply
         await sock.sendMessage(sender, { text: response });
       } catch (err) {
         logger.error(`WhatsApp handler error: ${err.message}`);
         await sock.sendMessage(sender, {
-          text: '❌ Sorry, I encountered an error. Please try again.',
+          text: '❌ Sorry, I encountered an error processing your message. Please try again.',
         });
       }
     }
@@ -121,9 +257,9 @@ export async function startWhatsApp() {
 }
 
 /**
- * Send a WhatsApp message to a specific JID.
- * @param {string} jid
- * @param {string} text
+ * Send a WhatsApp message to a specific number.
+ * @param {string} jid - WhatsApp JID (e.g., "256700000001@s.whatsapp.net")
+ * @param {string} text - Message text
  */
 export async function sendWhatsAppMessage(jid, text) {
   if (!sock) throw new Error('WhatsApp not connected');
@@ -131,10 +267,16 @@ export async function sendWhatsAppMessage(jid, text) {
 }
 
 /**
- * Get connection status.
+ * Stop the WhatsApp connection gracefully.
  */
-export function getWhatsAppStatus() {
-  return sock ? 'connected' : 'disconnected';
+export async function stopWhatsApp() {
+  if (sock) {
+    sock.end(undefined);
+    sock = null;
+    currentQR = null;
+    connectionStatus = 'disconnected';
+    logger.info('WhatsApp connection closed');
+  }
 }
 
-export default { startWhatsApp, sendWhatsAppMessage, getWhatsAppStatus };
+export default { startWhatsApp, stopWhatsApp, sendWhatsAppMessage, getWhatsAppStatus, getWhatsAppQR, getOwnerJid };

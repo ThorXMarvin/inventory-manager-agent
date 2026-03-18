@@ -11,9 +11,10 @@ import { getConfig, loadBusinessConfig } from './utils/config.js';
 import { createStorageAdapter, getStorage, closeStorage } from './storage/adapter.js';
 import { initDatabase, getDb, closeDatabase } from './db/sqlite.js';
 import { logger } from './utils/logger.js';
-import { startWhatsApp } from './channels/whatsapp.js';
+import { startWhatsApp, stopWhatsApp } from './channels/whatsapp.js';
 import { startTelegram } from './channels/telegram.js';
 import { startWeb } from './channels/web.js';
+import { startEmail, stopEmail } from './channels/email.js';
 import { checkLowStock } from './alerts/engine.js';
 import { sendAlert } from './alerts/notifier.js';
 import cron from 'node-cron';
@@ -69,6 +70,17 @@ async function main() {
       startedChannels.push('whatsapp');
     } catch (err) {
       logger.error(`Failed to start WhatsApp channel: ${err.message}`);
+    }
+  }
+
+  // Email channel (outbound notifications only — not conversational)
+  const emailConfig = config.channels?.email;
+  if (emailConfig?.enabled) {
+    try {
+      await startEmail(emailConfig);
+      startedChannels.push('email');
+    } catch (err) {
+      logger.error(`Failed to start email channel: ${err.message}`);
     }
   }
 
@@ -184,6 +196,8 @@ function seedProductsFromConfig(config) {
 
 async function shutdown(signal) {
   logger.info(`${signal} received. Shutting down...`);
+  await stopWhatsApp();
+  await stopEmail();
   await closeStorage();
   closeDatabase();
   process.exit(0);

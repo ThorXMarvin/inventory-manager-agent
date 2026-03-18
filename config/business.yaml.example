@@ -72,6 +72,20 @@ categories:
         min_stock: 20
         current_stock: 45
 
+# ─── Channel Configuration ───────────────────────────────
+channels:
+  whatsapp:
+    respond_to: "all"      # "all" = respond to everyone, "authorized" = only authorized_users
+  email:
+    enabled: false         # Set to true to enable email reports/alerts
+    smtp_host: "smtp-relay.brevo.com"
+    smtp_port: 587
+    smtp_user: ""          # Your Brevo SMTP login (email)
+    smtp_pass: ""          # Your Brevo SMTP key/password
+    from_name: "Inventory Manager"
+    from_email: ""         # Verified sender email in Brevo
+    owner_email: ""        # Where to send reports and alerts
+
 # ─── Alert Settings ──────────────────────────────────────
 alerts:
   low_stock:
@@ -79,7 +93,7 @@ alerts:
     check_interval: "6h"
     notify_via:
       - "whatsapp"
-      - "telegram"
+      - "email"
   daily_summary:
     enabled: true
     time: "20:00"          # 24h format, end of business day

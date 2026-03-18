@@ -11,6 +11,7 @@ import { getDailySales, getWeeklySales, getTopSellers } from '../agent/sales.js'
 import { dailySummary, stockReport, profitReport } from '../agent/reports.js';
 import { checkLowStock } from '../alerts/engine.js';
 import { registerChannel } from '../alerts/notifier.js';
+import { getWhatsAppQR, getWhatsAppStatus } from './whatsapp.js';
 import { getConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
@@ -118,6 +119,15 @@ export async function startWeb(port = 3000) {
     }
   });
 
+  // ─── WhatsApp QR Code ────────────────────────────────
+
+  // Return current QR string (for frontend to render)
+  app.get('/api/whatsapp/qr', (req, res) => {
+    const qr = getWhatsAppQR();
+    const status = getWhatsAppStatus();
+    res.json({ status, qr });
+  });
+
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', uptime: process.uptime() });
@@ -173,6 +183,12 @@ function getDashboardHTML(businessName) {
     .chat-box input:focus { outline: none; border-color: #1a73e8; }
     .chat-box button { padding: 12px 24px; background: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; }
     .chat-box button:hover { background: #1557b0; }
+    .qr-section { text-align: center; margin-bottom: 20px; }
+    .qr-section canvas { max-width: 280px; }
+    .qr-status { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+    .qr-status.connected { background: #e8f5e9; color: #2e7d32; }
+    .qr-status.qr_pending { background: #fff3e0; color: #e65100; }
+    .qr-status.disconnected { background: #ffebee; color: #c62828; }
     #response { background: white; border-radius: 12px; padding: 20px; min-height: 100px; white-space: pre-wrap; font-family: inherit; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; }
@@ -197,6 +213,14 @@ function getDashboardHTML(businessName) {
         <button onclick="sendMessage()">Send</button>
       </div>
       <div id="response" class="loading">Type a message above to get started...</div>
+    </div>
+
+    <!-- WhatsApp QR Code -->
+    <div class="card qr-section" id="qrSection" style="display:none; margin-bottom: 20px">
+      <h3>📱 WhatsApp Connection</h3>
+      <div id="qrStatus" style="margin: 10px 0"></div>
+      <div id="qrCanvas"></div>
+      <p id="qrHelp" style="margin-top:10px; font-size:0.85rem; color:#666"></p>
     </div>
 
     <!-- Stats -->
@@ -287,6 +311,47 @@ function getDashboardHTML(businessName) {
 
     loadData();
     setInterval(loadData, 30000); // Refresh every 30s
+
+    // ─── WhatsApp QR Code ──────────────────────────
+    // Load QRCode.js from CDN
+    const qrScript = document.createElement('script');
+    qrScript.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+    document.head.appendChild(qrScript);
+
+    async function checkWhatsApp() {
+      try {
+        const res = await fetch('/api/whatsapp/qr');
+        const data = await res.json();
+        const section = document.getElementById('qrSection');
+        const statusEl = document.getElementById('qrStatus');
+        const canvasEl = document.getElementById('qrCanvas');
+        const helpEl = document.getElementById('qrHelp');
+
+        if (data.status === 'connected') {
+          section.style.display = 'block';
+          statusEl.innerHTML = '<span class="qr-status connected">✅ WhatsApp Connected</span>';
+          canvasEl.innerHTML = '';
+          helpEl.textContent = 'Your WhatsApp is linked and ready to receive messages.';
+        } else if (data.status === 'qr_pending' && data.qr && typeof QRCode !== 'undefined') {
+          section.style.display = 'block';
+          statusEl.innerHTML = '<span class="qr-status qr_pending">📱 Scan QR Code</span>';
+          canvasEl.innerHTML = '<canvas id="qrImg"></canvas>';
+          QRCode.toCanvas(document.getElementById('qrImg'), data.qr, { width: 280 });
+          helpEl.textContent = 'Open WhatsApp → Settings → Linked Devices → Link a Device → Scan this QR';
+        } else if (data.status === 'disconnected') {
+          section.style.display = 'block';
+          statusEl.innerHTML = '<span class="qr-status disconnected">❌ WhatsApp Disconnected</span>';
+          canvasEl.innerHTML = '';
+          helpEl.textContent = 'Waiting for reconnection...';
+        }
+      } catch (err) {
+        // Silently ignore — WhatsApp may not be enabled
+      }
+    }
+
+    // Check WhatsApp status every 3 seconds (fast for QR scanning)
+    setTimeout(checkWhatsApp, 1000);
+    setInterval(checkWhatsApp, 3000);
   </script>
 </body>
 </html>`;

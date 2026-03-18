@@ -94,6 +94,7 @@ export function getConfig() {
     },
     whatsapp: {
       enabled: envBool('WHATSAPP_ENABLED'),
+      respond_to: biz.channels?.whatsapp?.respond_to || 'all', // "all" or "authorized"
     },
     web: {
       enabled: envBool('WEB_ENABLED'),
@@ -112,6 +113,19 @@ export function getConfig() {
         spreadsheet_id: biz.storage?.sheets?.spreadsheet_id || env('GOOGLE_SHEETS_SPREADSHEET_ID', ''),
         spreadsheet_name: biz.storage?.sheets?.spreadsheet_name || '{business_name} - Inventory',
       },
+    },
+    channels: {
+      email: biz.channels?.email || {
+        enabled: false,
+        smtp_host: env('EMAIL_SMTP_HOST', 'smtp-relay.brevo.com'),
+        smtp_port: parseInt(env('EMAIL_SMTP_PORT', '587'), 10),
+        smtp_user: env('EMAIL_SMTP_USER', ''),
+        smtp_pass: env('EMAIL_SMTP_PASS', ''),
+        from_name: env('EMAIL_FROM_NAME', 'Inventory Manager'),
+        from_email: env('EMAIL_FROM_EMAIL', ''),
+        owner_email: env('EMAIL_OWNER_EMAIL', ''),
+      },
+      whatsapp: biz.channels?.whatsapp || {},
     },
     logLevel: env('LOG_LEVEL', 'info'),
     business: biz.business || {},

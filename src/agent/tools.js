@@ -164,6 +164,20 @@ export const TOOLS = [
       properties: {},
     },
   },
+
+  // ─── Staff Activity ─────────────────────────────
+  {
+    name: 'get_staff_activity',
+    description: "Get all transactions logged by a specific staff member. Use when the owner asks what someone did today or on a specific date.",
+    parameters: {
+      type: 'object',
+      properties: {
+        staff_name: { type: 'string', description: 'Name of the staff member to look up' },
+        date: { type: 'string', description: 'Date to filter by in YYYY-MM-DD format (optional, defaults to today)' },
+      },
+      required: ['staff_name'],
+    },
+  },
 ];
 
 /**

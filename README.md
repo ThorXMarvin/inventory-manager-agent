@@ -9,13 +9,13 @@ Most small shops, pharmacies, and market vendors in East Africa track inventory 
 ## Solution
 
 A chat-based inventory agent that:
-- Tracks stock levels via simple WhatsApp/Telegram messages ("Added 50 bags of cement")
+- Tracks stock levels via simple WhatsApp messages ("Added 50 bags of cement")
 - Records sales ("Sold 3 bags cement to John")
-- Sends low-stock alerts automatically
+- Sends low-stock alerts automatically via WhatsApp and email
 - Generates daily/weekly stock and sales reports
 - Handles multiple product categories
 - Works with basic phones (text-based, no app needed)
-- **NEW v2:** Google Sheets integration for team visibility and mobile access
+- **v2:** Google Sheets integration, LLM function calling, email notifications
 
 ## Architecture
 
@@ -24,16 +24,18 @@ A chat-based inventory agent that:
 │              Inventory Manager Agent v2                    │
 ├──────────────────────────────────────────────────────────┤
 │  Channels        │  Agent Brain (Function Calling)        │
-│  ├─ WhatsApp     │  ├─ LLM Provider (OpenAI/Anthropic/   │
-│  ├─ Telegram     │  │   Google/Ollama)                    │
-│  └─ Web Dashboard│  ├─ 13 Tool Definitions                │
-│                  │  ├─ Tool Executor                      │
-│  Storage Layer   │  └─ System Prompt Builder              │
-│  ├─ SQLite       │                                        │
-│  ├─ Google Sheets│  Supporting Modules                    │
-│  └─ Hybrid (both)│  ├─ Alert Engine                       │
-│                  │  ├─ Report Generator                   │
-│  Config          │  └─ Background Sync (both mode)        │
+│  ├─ WhatsApp 📱  │  ├─ LLM Provider (OpenAI/Anthropic/   │
+│  │  (Baileys)    │  │   Google/Ollama)                    │
+│  ├─ Email 📧     │  ├─ 13 Tool Definitions                │
+│  │  (Brevo SMTP) │  ├─ Tool Executor                      │
+│  └─ Web Dashboard│  └─ System Prompt Builder              │
+│                  │                                        │
+│  Storage Layer   │  Supporting Modules                    │
+│  ├─ SQLite       │  ├─ Alert Engine                       │
+│  ├─ Google Sheets│  ├─ Report Generator                   │
+│  └─ Hybrid (both)│  └─ Background Sync (both mode)        │
+│                  │                                        │
+│  Config          │  Notifications → WhatsApp + Email       │
 │  └─ business.yaml│                                        │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -42,9 +44,34 @@ A chat-based inventory agent that:
 
 - **Runtime:** Node.js (ES Modules)
 - **LLM:** OpenAI, Anthropic, Google Gemini, or Ollama (with function calling)
-- **Channels:** Baileys (WhatsApp), Telegraf (Telegram), Express (Web)
+- **Channels:** Baileys (WhatsApp), Nodemailer/Brevo (Email), Express (Web)
 - **Storage:** SQLite (local) and/or Google Sheets (cloud)
 - **Other:** node-cron, winston, googleapis
+
+## Channels
+
+### 📱 WhatsApp (Primary)
+The business owner scans a QR code with their personal WhatsApp number. That number becomes the agent — customers message it and AI responds. The owner can still use WhatsApp normally on their phone.
+
+- **QR code** shown in terminal AND on the web dashboard
+- **Session persistence** — auth state saved to disk, auto-reconnects
+- **Message filtering** — respond to all numbers, or only configured authorized users
+- Set `WHATSAPP_ENABLED=true` in `.env` and scan the QR on first run
+
+### 📧 Email (Brevo SMTP)
+Outbound-only notifications: daily summaries, low stock alerts, weekly reports. Not conversational. Uses Brevo's free SMTP relay (300 emails/day, no credit card).
+
+See [docs/email-setup.md](docs/email-setup.md) for setup.
+
+### 🌐 Web Dashboard
+REST API + HTML dashboard with:
+- Chat interface (talk to the agent)
+- WhatsApp QR code display (for easy scanning)
+- Stock levels table with low-stock indicators
+- Sales stats
+
+### 📱 Telegram
+Planned for a future release. Placeholder file exists.
 
 ## Quick Start
 
@@ -201,9 +228,10 @@ inventory-manager-agent/
 │   │   ├── engine.js
 │   │   └── notifier.js
 │   ├── channels/
-│   │   ├── whatsapp.js
-│   │   ├── telegram.js
-│   │   └── web.js
+│   │   ├── whatsapp.js          # Primary: Baileys + QR scan
+│   │   ├── email.js             # Brevo SMTP outbound notifications
+│   │   ├── telegram.js          # Placeholder (future)
+│   │   └── web.js               # Dashboard + WhatsApp QR display
 │   ├── db/
 │   │   └── sqlite.js            # Legacy DB (backward compat)
 │   └── utils/
@@ -212,7 +240,8 @@ inventory-manager-agent/
 │       └── logger.js
 ├── docs/
 │   ├── setup.md
-│   ├── google-sheets-setup.md   # NEW: Sheets setup guide
+│   ├── google-sheets-setup.md   # Sheets setup guide
+│   ├── email-setup.md           # Brevo SMTP setup guide
 │   ├── adding-products.md
 │   ├── stock-commands.md
 │   ├── reports.md
