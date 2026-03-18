@@ -76,6 +76,16 @@ categories:
 channels:
   whatsapp:
     respond_to: "all"      # "all" = respond to everyone, "authorized" = only authorized_users
+    # Role-based authorization (optional — leave empty to allow everyone)
+    authorized_numbers:
+      # - name: "Boss"
+      #   phone: "+256770000000"
+      #   role: "owner"            # owner = full access to all tools
+      # - name: "John"
+      #   phone: "+256771111111"
+      #   role: "staff"            # staff = limited access (no financial reports, no price changes)
+    allow_unknown: false            # Allow messages from numbers not in the list above
+
   email:
     enabled: false         # Set to true to enable email reports/alerts
     smtp_host: "smtp-relay.brevo.com"

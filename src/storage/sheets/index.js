@@ -6,7 +6,10 @@
 import { initSheetsClient } from './client.js';
 import { createSpreadsheet, verifySpreadsheet } from './setup.js';
 import { getProducts, getProduct, addProduct, updateProduct, getLowStock } from './products.js';
-import { addStock, removeStock, recordSale, getSalesToday, getSalesRange, getTopSellers } from './transactions.js';
+import {
+  addStock, removeStock, recordSale, getSalesToday, getSalesRange,
+  getTopSellers, getStaffActivity, getSalesVelocity, getStaffPerformance,
+} from './transactions.js';
 import { getCustomers, getCustomerHistory } from './customers.js';
 import { logAlert } from './alerts.js';
 import { getDailySummary, getWeeklyReport } from './reports.js';
@@ -25,12 +28,9 @@ export function createSheetsAdapter(config = {}) {
     name: 'sheets',
 
     async initialize() {
-      // Authenticate with Google
       await initSheetsClient(
         config.credentials_file || process.env.GOOGLE_SHEETS_CREDENTIALS_FILE || './config/google-credentials.json'
       );
-
-      // Create or verify spreadsheet
       if (!spreadsheetId) {
         const name = config.spreadsheet_name || 'Inventory Manager';
         spreadsheetId = await createSpreadsheet(name);
@@ -42,9 +42,7 @@ export function createSheetsAdapter(config = {}) {
       }
     },
 
-    async close() {
-      sheetsCache.clear();
-    },
+    async close() { sheetsCache.clear(); },
 
     // ─── Products ─────────────────────────────────
     async getProducts() { return getProducts(spreadsheetId); },
@@ -53,11 +51,11 @@ export function createSheetsAdapter(config = {}) {
     async updateProduct(sku, data) { return updateProduct(spreadsheetId, sku, data); },
 
     // ─── Stock ────────────────────────────────────
-    async addStock(sku, qty, buyPrice = 0) { return addStock(spreadsheetId, sku, qty, buyPrice); },
-    async removeStock(sku, qty) { return removeStock(spreadsheetId, sku, qty); },
+    async addStock(sku, qty, buyPrice = 0, loggedBy = 'System') { return addStock(spreadsheetId, sku, qty, buyPrice, loggedBy); },
+    async removeStock(sku, qty, loggedBy = 'System') { return removeStock(spreadsheetId, sku, qty, loggedBy); },
 
     // ─── Sales ────────────────────────────────────
-    async recordSale(sku, qty, customer = null, price = 0) { return recordSale(spreadsheetId, sku, qty, customer, price); },
+    async recordSale(sku, qty, customer = null, price = 0, loggedBy = 'System') { return recordSale(spreadsheetId, sku, qty, customer, price, loggedBy); },
     async getSalesToday() { return getSalesToday(spreadsheetId); },
     async getSalesRange(start, end) { return getSalesRange(spreadsheetId, start, end); },
     async getTopSellers(n = 5) { return getTopSellers(spreadsheetId, n); },
@@ -73,6 +71,11 @@ export function createSheetsAdapter(config = {}) {
     // ─── Reports ──────────────────────────────────
     async getDailySummary() { return getDailySummary(spreadsheetId); },
     async getWeeklyReport() { return getWeeklyReport(spreadsheetId); },
+
+    // ─── Staff & Insights ─────────────────────────
+    async getStaffActivity(staffName, date = null) { return getStaffActivity(spreadsheetId, staffName, date); },
+    async getSalesVelocity() { return getSalesVelocity(spreadsheetId); },
+    async getStaffPerformance() { return getStaffPerformance(spreadsheetId); },
   };
 }
 

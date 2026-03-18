@@ -16,7 +16,7 @@ const SHEET_TABS = [
   },
   {
     name: 'Transactions',
-    headers: ['ID', 'Product ID', 'Product Name', 'Type', 'Quantity', 'Unit Price', 'Total Price', 'Customer', 'Notes', 'Created At'],
+    headers: ['ID', 'Product ID', 'Product Name', 'Type', 'Quantity', 'Unit Price', 'Total Price', 'Customer', 'Notes', 'Created At', 'Logged By'],
     frozenRows: 1,
     color: { red: 0.1, green: 0.45, blue: 0.82 }, // blue
   },

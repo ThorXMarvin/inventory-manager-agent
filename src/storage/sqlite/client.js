@@ -1,7 +1,6 @@
 /**
  * SQLite Client — Connection Management
  * Wraps better-sqlite3 for the storage adapter layer.
- * Mirrors the original src/db/sqlite.js but is used by the adapter.
  */
 
 import Database from 'better-sqlite3';
@@ -28,6 +27,7 @@ export function initSqlite(dbPath = './data/inventory.db') {
   db.pragma('foreign_keys = ON');
 
   createTables();
+  runMigrations();
   logger.info(`SQLite initialized at ${dbPath}`);
   return db;
 }
@@ -56,6 +56,7 @@ function createTables() {
       unit_price REAL DEFAULT 0,
       total_price REAL DEFAULT 0,
       customer_id INTEGER,
+      logged_by TEXT DEFAULT 'System',
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (product_id) REFERENCES products(id),
@@ -93,10 +94,28 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_transactions_product ON transactions(product_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+    CREATE INDEX IF NOT EXISTS idx_transactions_logged_by ON transactions(logged_by);
     CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
   `);
+}
+
+/**
+ * Run schema migrations for existing databases.
+ * Adds columns that may be missing if upgrading from v1.
+ */
+function runMigrations() {
+  try {
+    const columns = db.prepare("PRAGMA table_info(transactions)").all();
+    const hasLoggedBy = columns.some(c => c.name === 'logged_by');
+    if (!hasLoggedBy) {
+      db.prepare("ALTER TABLE transactions ADD COLUMN logged_by TEXT DEFAULT 'System'").run();
+      logger.info('Migration: added logged_by column to transactions');
+    }
+  } catch (err) {
+    logger.debug(`Migration check: ${err.message}`);
+  }
 }
 
 /**

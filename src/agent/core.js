@@ -22,6 +22,53 @@ import { logger } from '../utils/logger.js';
 
 let llmClient = null;
 
+// ─── Conversation Memory ──────────────────────────────
+// Per-user chat history: Map<senderKey, { messages: Array, lastActivity: number }>
+const conversationHistory = new Map();
+const MAX_HISTORY_PAIRS = 10;
+const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Get or create conversation history for a sender.
+ * Auto-expires after 30 minutes of inactivity.
+ */
+function getConversation(senderKey) {
+  const now = Date.now();
+
+  // Clean expired conversations periodically
+  if (Math.random() < 0.1) { // 10% chance to cleanup on each call
+    for (const [key, conv] of conversationHistory) {
+      if (now - conv.lastActivity > CONVERSATION_TIMEOUT_MS) {
+        conversationHistory.delete(key);
+      }
+    }
+  }
+
+  let conv = conversationHistory.get(senderKey);
+  if (!conv || (now - conv.lastActivity > CONVERSATION_TIMEOUT_MS)) {
+    conv = { messages: [], lastActivity: now };
+    conversationHistory.set(senderKey, conv);
+  }
+  conv.lastActivity = now;
+  return conv;
+}
+
+/**
+ * Add a user+assistant message pair to conversation history.
+ */
+function addToConversation(senderKey, userMessage, assistantMessage) {
+  const conv = getConversation(senderKey);
+  conv.messages.push(
+    { role: 'user', content: userMessage },
+    { role: 'assistant', content: assistantMessage }
+  );
+  // Keep only last N pairs (2*N messages)
+  while (conv.messages.length > MAX_HISTORY_PAIRS * 2) {
+    conv.messages.shift();
+    conv.messages.shift();
+  }
+}
+
 /**
  * Initialize the LLM client based on config.
  */
@@ -74,12 +121,22 @@ export async function processMessage(message, meta = {}) {
   const { llm } = getConfig();
   const systemPrompt = buildSystemPrompt();
 
+  // Get conversation history for this sender
+  const senderKey = meta.sender || meta.channel || 'default';
+  const conversation = getConversation(senderKey);
+
   try {
+    let response;
     if (llmClient.type === 'anthropic') {
-      return await processAnthropic(message, systemPrompt, llm.model);
+      response = await processAnthropic(message, systemPrompt, llm.model, conversation.messages, meta);
     } else {
-      return await processOpenAI(message, systemPrompt, llm.model);
+      response = await processOpenAI(message, systemPrompt, llm.model, conversation.messages, meta);
     }
+
+    // Store in conversation memory
+    addToConversation(senderKey, message, response);
+
+    return response;
   } catch (err) {
     logger.error(`Error processing message: ${err.message}`, err);
     return `❌ Sorry, something went wrong. Please try again.\nError: ${err.message}`;
@@ -89,10 +146,11 @@ export async function processMessage(message, meta = {}) {
 /**
  * OpenAI-compatible function calling loop (works for OpenAI, Ollama, Google Gemini).
  */
-async function processOpenAI(message, systemPrompt, model) {
+async function processOpenAI(message, systemPrompt, model, history = [], meta = {}) {
   const tools = toOpenAITools();
   const messages = [
     { role: 'system', content: systemPrompt },
+    ...history, // Include conversation history for context
     { role: 'user', content: message },
   ];
 
@@ -126,7 +184,7 @@ async function processOpenAI(message, systemPrompt, model) {
     }));
 
     logger.info(`Tool calls: ${toolCalls.map(tc => tc.name).join(', ')}`);
-    const results = await executeToolCalls(toolCalls);
+    const results = await executeToolCalls(toolCalls, meta);
 
     // Add tool results to message history
     for (const result of results) {
@@ -144,9 +202,11 @@ async function processOpenAI(message, systemPrompt, model) {
 /**
  * Anthropic function calling loop.
  */
-async function processAnthropic(message, systemPrompt, model) {
+async function processAnthropic(message, systemPrompt, model, history = [], meta = {}) {
   const tools = toAnthropicTools();
-  const messages = [{ role: 'user', content: message }];
+
+  // Convert history to Anthropic format (interleaved user/assistant)
+  const messages = [...history, { role: 'user', content: message }];
 
   const MAX_ITERATIONS = 10;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -183,7 +243,7 @@ async function processAnthropic(message, systemPrompt, model) {
     }));
 
     logger.info(`Tool calls: ${toolCalls.map(tc => tc.name).join(', ')}`);
-    const results = await executeToolCalls(toolCalls);
+    const results = await executeToolCalls(toolCalls, meta);
 
     // Add tool results
     const toolResults = results.map(r => ({
