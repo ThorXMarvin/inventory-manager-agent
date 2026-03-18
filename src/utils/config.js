@@ -125,7 +125,12 @@ export function getConfig() {
         from_email: env('EMAIL_FROM_EMAIL', ''),
         owner_email: env('EMAIL_OWNER_EMAIL', ''),
       },
-      whatsapp: biz.channels?.whatsapp || {},
+      whatsapp: {
+        authorized_numbers: biz.channels?.whatsapp?.authorized_numbers || [],
+        allow_unknown: biz.channels?.whatsapp?.allow_unknown ?? false,
+        unauthorized_message: biz.channels?.whatsapp?.unauthorized_message || 'Sorry, you are not authorized to use this system.',
+        respond_to: biz.channels?.whatsapp?.respond_to || 'all',
+      },
     },
     logLevel: env('LOG_LEVEL', 'info'),
     business: biz.business || {},

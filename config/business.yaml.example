@@ -75,16 +75,20 @@ categories:
 # ─── Channel Configuration ───────────────────────────────
 channels:
   whatsapp:
-    respond_to: "all"      # "all" = respond to everyone, "authorized" = only authorized_users
-    # Role-based authorization (optional — leave empty to allow everyone)
+    # Staff authorization — who can message the bot and what they can do
+    # Leave authorized_numbers empty to allow everyone (no role restrictions)
     authorized_numbers:
-      # - name: "Boss"
-      #   phone: "+256770000000"
-      #   role: "owner"            # owner = full access to all tools
-      # - name: "John"
-      #   phone: "+256771111111"
-      #   role: "staff"            # staff = limited access (no financial reports, no price changes)
-    allow_unknown: false            # Allow messages from numbers not in the list above
+      - name: "Boss"
+        phone: "+256770000000"
+        role: "owner"        # full access: reports, profits, prices, staff management
+      - name: "John"
+        phone: "+256771111111"
+        role: "staff"        # limited: record sales, add stock, check stock
+      # - name: "Mary"
+      #   phone: "+256772222222"
+      #   role: "staff"
+    allow_unknown: false     # reject messages from numbers not in the list above
+    unauthorized_message: "Sorry, you are not authorized to use this inventory system."
 
   email:
     enabled: false         # Set to true to enable email reports/alerts
@@ -118,9 +122,8 @@ reports:
     - "profit_margin"
     - "top_sellers"
 
-# ─── Authorized Users (optional) ────────────────────────
-# Only these numbers/usernames can interact with the bot
-# Leave empty to allow anyone
+# ─── Legacy Authorized Users (deprecated) ────────────────
+# Use channels.whatsapp.authorized_numbers instead for role-based access.
+# This flat list is only used as a fallback if authorized_numbers is empty.
 authorized_users: []
   # - "+256700000001"
-  # - "@shop_manager"

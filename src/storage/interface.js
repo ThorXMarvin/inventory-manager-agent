@@ -78,12 +78,26 @@
  *   Generate weekly report data.
  *   Returns { period, transactions, revenue, profit, topSellers[], lowStock[] }.
  * 
+ * ─── Staff & Insights ────────────────────────────────────
+ * @property {function(string, string|null): Promise<Object>} getStaffActivity
+ *   Get all transactions by a staff member on a date.
+ *   Returns { staff_name, date, total_transactions, sales, stock_additions, total_revenue, transactions[] }.
+ *
+ * @property {function(): Promise<Array>} getSalesVelocity
+ *   Get sales velocity per product for reorder suggestions.
+ *
+ * @property {function(): Promise<Array>} getStaffPerformance
+ *   Get staff performance summary for the past week.
+ *
  * ─── Lifecycle ──────────────────────────────────────────
  * @property {function(): Promise<void>} initialize
  *   Initialize the storage backend (create tables, sheets, etc.).
  * 
  * @property {function(): Promise<void>} close
  *   Clean up resources (close DB connections, flush caches).
+ *
+ * NOTE: addStock, removeStock, and recordSale accept an optional `loggedBy`
+ * (staff name) as their last argument for audit trail.
  */
 
 /**
@@ -96,6 +110,7 @@ export const REQUIRED_METHODS = [
   'getCustomers', 'getCustomerHistory',
   'getLowStock', 'logAlert',
   'getDailySummary', 'getWeeklyReport',
+  'getStaffActivity', 'getSalesVelocity', 'getStaffPerformance',
   'initialize', 'close',
 ];
 

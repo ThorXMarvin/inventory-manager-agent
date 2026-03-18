@@ -119,7 +119,7 @@ export async function processMessage(message, meta = {}) {
   if (!llmClient) initClient();
 
   const { llm } = getConfig();
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(meta);
 
   // Get conversation history for this sender
   const senderKey = meta.sender || meta.channel || 'default';

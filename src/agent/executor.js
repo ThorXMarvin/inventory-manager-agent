@@ -1,39 +1,40 @@
 /**
  * Tool Executor
- * Receives tool calls from the LLM and executes them against the storage adapter.
- * Returns structured results that are sent back to the LLM.
+ * Receives tool calls from the LLM, checks role-based permissions,
+ * executes against the storage adapter, and returns results.
+ * 
+ * Every stock/sale operation logs the staff member who recorded it.
  */
 
 import { getStorage } from '../storage/adapter.js';
 import { logger } from '../utils/logger.js';
 
-// Tools that staff members can access (owner can access everything)
-const STAFF_ALLOWED_TOOLS = new Set([
-  'add_stock', 'check_stock', 'record_sale', 'search_product',
-  'get_sales_today', 'get_low_stock', 'add_product', 'get_customer_history',
-  'get_sales_range',
-]);
-
-// Tools restricted to owners only
+// Tools restricted to owner role only
 const OWNER_ONLY_TOOLS = new Set([
-  'update_product', 'adjust_stock', 'weekly_report', 'daily_summary',
+  'adjust_stock',
+  'update_product',
+  'daily_summary',   // Contains profit data
+  'weekly_report',
   'get_staff_activity',
+  'get_reorder_suggestions',
+  'get_staff_performance',
 ]);
 
 /**
- * Check if a staff member has permission to use a tool.
+ * Check if the current user has permission to use a tool.
  * @param {string} toolName
- * @param {Object} meta - Contains meta.staff with role info
+ * @param {Object} meta - { staff: { name, role } }
  * @returns {{ allowed: boolean, message?: string }}
  */
 function checkPermission(toolName, meta = {}) {
   const staff = meta?.staff;
+  // No staff info or owner role = full access
   if (!staff || staff.role === 'owner') return { allowed: true };
 
   if (OWNER_ONLY_TOOLS.has(toolName)) {
     return {
       allowed: false,
-      message: `🔒 Sorry ${staff.name}, you don't have permission to use this feature. Only the owner can access ${toolName.replace(/_/g, ' ')}.`,
+      message: `🔒 Sorry ${staff.name}, only the owner can access ${toolName.replace(/_/g, ' ')}. Ask the boss for this info!`,
     };
   }
 
@@ -42,10 +43,10 @@ function checkPermission(toolName, meta = {}) {
 
 /**
  * Execute a single tool call.
- * @param {string} toolName - Name of the tool to execute
+ * @param {string} toolName
  * @param {Object} args - Tool arguments from the LLM
- * @param {Object} meta - Metadata including staff info
- * @returns {Promise<Object>} Result to send back to the LLM
+ * @param {Object} meta - { staff: { name, role } }
+ * @returns {Promise<Object>}
  */
 export async function executeTool(toolName, args = {}, meta = {}) {
   // Check permission first
@@ -57,7 +58,7 @@ export async function executeTool(toolName, args = {}, meta = {}) {
   const storage = getStorage();
   const loggedBy = meta?.staff?.name || 'System';
 
-  logger.info(`Executing tool: ${toolName} with args: ${JSON.stringify(args)}`);
+  logger.info(`Executing tool: ${toolName} by ${loggedBy} | args: ${JSON.stringify(args)}`);
 
   try {
     switch (toolName) {
@@ -71,7 +72,7 @@ export async function executeTool(toolName, args = {}, meta = {}) {
         const product = await storage.getProduct(args.product);
         if (!product) return { success: false, error: `Product "${args.product}" not found` };
 
-        return {
+        const result = {
           success: true,
           name: product.name,
           sku: product.sku,
@@ -80,10 +81,16 @@ export async function executeTool(toolName, args = {}, meta = {}) {
           unit: product.unit,
           min_stock: product.min_stock,
           is_low: product.current_stock < product.min_stock,
-          buy_price: product.buy_price,
           sell_price: product.sell_price,
           stock_value: product.current_stock * product.buy_price,
         };
+
+        // Only include buy_price for owners
+        if (meta?.staff?.role === 'owner' || !meta?.staff) {
+          result.buy_price = product.buy_price;
+        }
+
+        return result;
       }
 
       case 'adjust_stock': {
@@ -91,29 +98,19 @@ export async function executeTool(toolName, args = {}, meta = {}) {
         if (!product) return { success: false, error: `Product "${args.product}" not found` };
 
         const diff = args.new_quantity - product.current_stock;
-        await storage.updateProduct(product.sku || product.name, {
-          current_stock: args.new_quantity,
-        });
+        await storage.updateProduct(product.sku || product.name, { current_stock: args.new_quantity });
         return {
-          success: true,
-          name: product.name,
-          previous_stock: product.current_stock,
-          new_stock: args.new_quantity,
-          difference: diff,
+          success: true, name: product.name,
+          previous_stock: product.current_stock, new_stock: args.new_quantity, difference: diff,
         };
       }
 
       case 'get_low_stock': {
         const items = await storage.getLowStock();
         return {
-          success: true,
-          count: items.length,
+          success: true, count: items.length,
           items: items.map(i => ({
-            name: i.name,
-            sku: i.sku,
-            current_stock: i.current_stock,
-            min_stock: i.min_stock,
-            unit: i.unit,
+            name: i.name, sku: i.sku, current_stock: i.current_stock, min_stock: i.min_stock, unit: i.unit,
           })),
         };
       }
@@ -139,14 +136,9 @@ export async function executeTool(toolName, args = {}, meta = {}) {
       // ─── Products ─────────────────────────────
       case 'add_product': {
         const result = await storage.addProduct({
-          name: args.name,
-          sku: args.sku || '',
-          category: args.category || 'General',
-          unit: args.unit || 'piece',
-          buy_price: args.buy_price || 0,
-          sell_price: args.sell_price || 0,
-          min_stock: args.min_stock || 0,
-          current_stock: args.current_stock || 0,
+          name: args.name, sku: args.sku || '', category: args.category || 'General',
+          unit: args.unit || 'piece', buy_price: args.buy_price || 0, sell_price: args.sell_price || 0,
+          min_stock: args.min_stock || 0, current_stock: args.current_stock || 0,
         });
         return { success: true, ...result };
       }
@@ -166,7 +158,13 @@ export async function executeTool(toolName, args = {}, meta = {}) {
       case 'search_product': {
         const product = await storage.getProduct(args.query);
         if (!product) return { success: false, error: `No product found matching "${args.query}"` };
-        return { success: true, ...product };
+
+        const result = { success: true, ...product };
+        // Hide buy_price from staff
+        if (meta?.staff?.role === 'staff') {
+          delete result.buy_price;
+        }
+        return result;
       }
 
       // ─── Customers ────────────────────────────
@@ -186,10 +184,52 @@ export async function executeTool(toolName, args = {}, meta = {}) {
         return { success: true, ...result };
       }
 
-      // ─── Staff Activity ─────────────────────────
+      // ─── Staff & Insights ─────────────────────
       case 'get_staff_activity': {
         const result = await storage.getStaffActivity(args.staff_name, args.date || null);
         return { success: true, ...result };
+      }
+
+      case 'get_reorder_suggestions': {
+        const velocity = await storage.getSalesVelocity();
+        // Filter to items that need attention
+        const suggestions = velocity
+          .filter(p => p.avg_daily_sales > 0) // Only items that actually sell
+          .map(p => ({
+            name: p.name,
+            sku: p.sku,
+            current_stock: p.current_stock,
+            min_stock: p.min_stock,
+            unit: p.unit,
+            avg_daily_sales: p.avg_daily_sales,
+            days_until_stockout: p.days_until_stockout,
+            urgency: p.days_until_stockout <= 3 ? 'URGENT'
+              : p.days_until_stockout <= 7 ? 'SOON'
+              : p.days_until_stockout <= 14 ? 'PLAN'
+              : 'OK',
+            suggested_order_qty: Math.max(
+              Math.ceil(p.avg_daily_sales * 14) - p.current_stock, // 2-week supply
+              0
+            ),
+            estimated_cost: Math.max(Math.ceil(p.avg_daily_sales * 14) - p.current_stock, 0) * p.buy_price,
+          }))
+          .filter(p => p.urgency !== 'OK');
+
+        return {
+          success: true,
+          total_items_to_reorder: suggestions.length,
+          total_estimated_cost: suggestions.reduce((s, p) => s + p.estimated_cost, 0),
+          suggestions,
+        };
+      }
+
+      case 'get_staff_performance': {
+        const performance = await storage.getStaffPerformance();
+        return {
+          success: true,
+          period: 'Last 7 days',
+          staff: performance,
+        };
       }
 
       default:
@@ -205,17 +245,12 @@ export async function executeTool(toolName, args = {}, meta = {}) {
  * Execute multiple tool calls in sequence.
  * @param {Array<{name: string, arguments: Object}>} toolCalls
  * @param {Object} meta - Metadata including staff info
- * @returns {Promise<Array<{tool_call_id: string, name: string, result: Object}>>}
  */
 export async function executeToolCalls(toolCalls, meta = {}) {
   const results = [];
   for (const call of toolCalls) {
     const result = await executeTool(call.name, call.arguments || {}, meta);
-    results.push({
-      tool_call_id: call.id || call.name,
-      name: call.name,
-      result,
-    });
+    results.push({ tool_call_id: call.id || call.name, name: call.name, result });
   }
   return results;
 }

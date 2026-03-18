@@ -1,14 +1,15 @@
 /**
- * WhatsApp Channel (Baileys) — Primary Channel
+ * WhatsApp Channel (Baileys) — Staff Management Tool
  * 
- * The business owner scans a QR code with their own WhatsApp number.
- * Their number becomes the agent's number — customers message it, AI responds.
- * Owner can still use WhatsApp normally on their phone.
+ * The business owner links their WhatsApp number by scanning a QR code.
+ * Staff and owner message this number to manage inventory via AI.
+ * This is an INTERNAL management tool, not a customer-facing chatbot.
  * 
  * Features:
  * - QR code in terminal AND on web dashboard (via shared state)
  * - Session persistence (auth state saved to disk, auto-reconnect)
- * - Configurable message filtering (respond to all, or only configured numbers)
+ * - Staff authorization with role-based access (owner vs staff)
+ * - Every transaction logged with the staff member's name
  * - Owner JID auto-detected for alert delivery
  */
 
@@ -224,7 +225,13 @@ export async function startWhatsApp() {
 
       // Check authorization
       if (!isSenderAllowed(sender)) {
-        logger.info(`WhatsApp: Blocked message from unauthorized sender ${sender}`);
+        logger.info(`WhatsApp: Blocked unauthorized sender ${sender}`);
+        const config = getConfig();
+        const unauthorizedMsg = config.channels?.whatsapp?.unauthorized_message
+          || 'Sorry, you are not authorized to use this system.';
+        try {
+          await sock.sendMessage(sender, { text: unauthorizedMsg });
+        } catch (_) { /* ignore send errors for unauthorized */ }
         continue;
       }
 
