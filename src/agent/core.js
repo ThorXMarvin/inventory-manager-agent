@@ -12,7 +12,7 @@
  * 5. Repeat until LLM returns final text response
  */
 
-import OpenAI from 'openai';
+import OpenAI, { AzureOpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { toOpenAITools, toAnthropicTools } from './tools.js';
 import { executeToolCalls } from './executor.js';
@@ -76,9 +76,25 @@ function initClient() {
   const { llm } = getConfig();
 
   switch (llm.provider) {
-    case 'openai':
-      llmClient = { type: 'openai', client: new OpenAI({ apiKey: llm.apiKey }) };
+    case 'openai': {
+      const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+      const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-06-01';
+      if (azureEndpoint) {
+        llmClient = {
+          type: 'openai',
+          client: new AzureOpenAI({
+            apiKey: llm.apiKey,
+            endpoint: azureEndpoint,
+            apiVersion: azureApiVersion,
+            deployment: llm.model,
+          }),
+        };
+        logger.info(`LLM: Azure OpenAI / ${llm.model} @ ${azureEndpoint}`);
+      } else {
+        llmClient = { type: 'openai', client: new OpenAI({ apiKey: llm.apiKey }) };
+      }
       break;
+    }
 
     case 'anthropic':
       llmClient = { type: 'anthropic', client: new Anthropic({ apiKey: llm.apiKey }) };
