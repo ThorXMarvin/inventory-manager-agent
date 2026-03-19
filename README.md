@@ -4,27 +4,53 @@ AI-powered inventory management for small businesses. Track stock, record sales,
 
 ---
 
-## 🚀 Quick Start (Non-Technical)
+## 🚀 Quick Start — Download & Run (No Coding Required)
 
 ### 1. Download
-Download the latest release from [**Releases**](../../releases).
+Go to [**Releases**](../../releases) and download the file for your system:
+- **Windows:** `inventory-manager-agent-v1.0.0-windows-x64.zip`
+- **Linux:** `inventory-manager-agent-v1.0.0-linux-x64.tar.gz`
 
-### 2. Install Node.js
-If you don't have Node.js installed, download it from [nodejs.org](https://nodejs.org) (LTS version recommended).
+### 2. Extract & Run
+- **Windows:** Unzip the folder → Double-click `inventory-manager-agent.exe`
+- **Linux:** Extract → Run `./inventory-manager-agent` in terminal
 
-### 3. Start the App
-- **Windows:** Double-click `start.bat`
-- **Mac/Linux:** Open a terminal in the folder and run `./start.sh`
+**That's it.** Your browser opens automatically to the setup wizard.
 
-### 4. Setup Wizard
-Your browser will open automatically. Follow the setup wizard to:
-- Enter your business details
+### 3. Setup Wizard
+Follow the on-screen wizard to:
+- Enter your business details (name, currency)
 - Add your products (or use a template for your business type)
 - Connect an AI provider (OpenAI, Anthropic, Google, or free local Ollama)
 - Enable WhatsApp and email alerts
 
-### 5. Start Managing!
-That's it. Chat with your inventory agent via the web dashboard or WhatsApp.
+### 4. Start Managing!
+Chat with your inventory agent via the web dashboard or WhatsApp.
+
+> 💡 **No Node.js required** when using the executable. Everything is bundled.
+
+---
+
+## 🛠️ Developer Setup (from source)
+
+If you prefer running from source or want to modify the code:
+
+### 1. Prerequisites
+- [Node.js](https://nodejs.org) v18 or later
+
+### 2. Install & Run
+```bash
+git clone https://github.com/ThorXMarvin/inventory-manager-agent.git
+cd inventory-manager-agent
+npm install
+npm start
+```
+
+### 3. Build Executables
+```bash
+npm run build
+# Outputs to dist/executables/
+```
 
 ---
 

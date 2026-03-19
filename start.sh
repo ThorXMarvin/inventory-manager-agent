@@ -19,11 +19,4 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo ""
-echo "🌐 Opening dashboard in browser..."
-echo "   If it doesn't open, go to: http://localhost:3000"
-echo ""
-
-# Try to open browser
-(sleep 2 && (xdg-open http://localhost:3000 2>/dev/null || open http://localhost:3000 2>/dev/null || echo "Open http://localhost:3000 in your browser")) &
-
-node src/index.js
+node src/launcher.js
