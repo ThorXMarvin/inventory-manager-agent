@@ -11,3 +11,4 @@ config/google-credentials.json
 data/
 config/google-credentials.json
 auth_info_baileys/
+dist/
