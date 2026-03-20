@@ -65,5 +65,40 @@ echo   Starting now...
 echo   ══════════════════════════════════════════════
 echo.
 
+REM ─── Verify installation integrity ──────────────────────
+
+if not exist "%INSTALL_DIR%\node\node.exe" (
+    echo.
+    echo   ERROR: Node.js binary missing from installation!
+    echo   The zip may have been extracted incorrectly.
+    echo   Make sure to extract ALL files before running setup.bat
+    echo.
+    echo   Press any key to exit...
+    pause >nul
+    exit /b 1
+)
+
+if not exist "%INSTALL_DIR%\src\launcher.js" (
+    echo.
+    echo   ERROR: Application files missing from installation!
+    echo.
+    echo   Press any key to exit...
+    pause >nul
+    exit /b 1
+)
+
+if not exist "%INSTALL_DIR%\node_modules" (
+    echo.
+    echo   ERROR: Dependencies missing from installation!
+    echo   The zip may be incomplete. Please re-download.
+    echo.
+    echo   Press any key to exit...
+    pause >nul
+    exit /b 1
+)
+
+echo   ✅ Installation verified
+echo.
+
 REM Start the app
 call "%INSTALL_DIR%\run.bat"
